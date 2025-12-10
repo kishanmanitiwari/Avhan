@@ -23,6 +23,8 @@
             max-width: 100%;
             height: auto;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
         }
         .loading {
             display: none;
@@ -39,31 +41,53 @@
         const container = document.getElementById('pdf-container');
         const pdfPath = 'SWAPNIL BHAU AHVAL FINAL 05I11I25_compressed (1).pdf';
         
+        // Use moderate DPR for text clarity without heavy performance cost
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        const dprMultiplier = Math.min(devicePixelRatio, 1.5); // Cap at 1.5x for speed
+        
         // Detect device type for optimal scaling
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         const isTablet = /iPad|Android/i.test(navigator.userAgent) && window.innerWidth >= 768;
         
         // Calculate optimal scale for all devices
-        let scale;
+        let baseScale;
         if (isMobile) {
-            scale = (window.innerWidth - 20) / 612;
+            baseScale = (window.innerWidth - 20) / 612;
         } else if (isTablet) {
-            scale = (window.innerWidth - 40) / 612;
+            baseScale = (window.innerWidth - 40) / 612;
         } else {
-            scale = 1.5;
+            baseScale = 1.5;
         }
-        scale = Math.max(scale, 0.5);
+        baseScale = Math.max(baseScale, 0.5);
+        
+        // Function to create optimized canvas (better text, acceptable images)
+        function createOptimizedCanvas(viewport) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            
+            // Moderate DPR for text clarity without heavy performance cost
+            canvas.width = viewport.width * dprMultiplier;
+            canvas.height = viewport.height * dprMultiplier;
+            
+            // Set display size
+            canvas.style.width = viewport.width + 'px';
+            canvas.style.height = 'auto';
+            canvas.style.maxWidth = '100%';
+            
+            // Scale context
+            context.scale(dprMultiplier, dprMultiplier);
+            
+            // Optimize for text clarity (disable smoothing for sharper text)
+            context.imageSmoothingEnabled = false; // Crisper text edges
+            
+            return { canvas, context };
+        }
         
         pdfjsLib.getDocument(pdfPath).promise.then(function(pdf) {
             // Render first page immediately
             pdf.getPage(1).then(function(page) {
-                const viewport = page.getViewport({ scale: scale });
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-                canvas.style.maxWidth = '100%';
-                canvas.style.height = 'auto';
+                const viewport = page.getViewport({ scale: baseScale });
+                const { canvas, context } = createOptimizedCanvas(viewport);
                 
                 container.appendChild(canvas);
                 
@@ -78,13 +102,8 @@
                     if (pdf.numPages > 1) {
                         for (let pageNum = 2; pageNum <= pdf.numPages; pageNum++) {
                             pdf.getPage(pageNum).then(function(page) {
-                                const viewport = page.getViewport({ scale: scale });
-                                const canvas = document.createElement('canvas');
-                                const context = canvas.getContext('2d');
-                                canvas.height = viewport.height;
-                                canvas.width = viewport.width;
-                                canvas.style.maxWidth = '100%';
-                                canvas.style.height = 'auto';
+                                const viewport = page.getViewport({ scale: baseScale });
+                                const { canvas, context } = createOptimizedCanvas(viewport);
                                 
                                 container.appendChild(canvas);
                                 

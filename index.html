@@ -9,39 +9,46 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; overflow: hidden; background: #2c3e50; }
+        
         #pdf-container {
             width: 100%;
             height: 100vh;
             overflow: auto;
-            -webkit-overflow-scrolling: touch;
+            -webkit-overflow-scrolling: touch; /* Momentum scrolling on iOS */
             text-align: center;
             padding: 10px 0;
             background: #2c3e50;
         }
+        
         canvas {
             margin: 0 auto 10px;
             display: block;
-            /* Ensure canvas doesn't overflow horizontally */
-            max-width: 100%; 
+            max-width: 100%;
             height: auto;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            
+            /* PERFORMANCE OPTIMIZATIONS */
             opacity: 0;
-            animation: fadeIn 0.3s ease-in forwards;
-            /* Slight contrast boost for perceived sharpness */
-            filter: contrast(105%); 
+            /* Tells browser to prepare GPU for opacity changes - prevents stutter */
+            will-change: opacity; 
+            /* Slower, smoother ease-out animation */
+            animation: fadeIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; 
+            
+            /* CLARITY OPTIMIZATIONS */
+            filter: contrast(105%);
         }
+        
         @keyframes fadeIn {
-            to { opacity: 1; }
+            from { opacity: 0; transform: translateY(10px); } /* Added slight slide-up for premium feel */
+            to { opacity: 1; transform: translateY(0); }
         }
+        
         .page-placeholder {
             margin: 0 auto 10px;
             background: #3a3a3a;
             border-radius: 4px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             min-height: 200px;
-        }
-        .loading {
-            display: none;
         }
     </style>
 </head>
@@ -55,15 +62,14 @@
         const container = document.getElementById('pdf-container');
         const pdfPath = 'SWAPNIL BHAU AHVAL FINAL 05I11I25_compressed (1).pdf';
         
-        // --- CLARITY IMPROVEMENT 1: ALLOW HIGHER PIXEL DENSITY ---
-        // Was capped at 1.5, increasing to 2.5 covers most Retina/High-DPI screens
+        // High quality scale settings
         const devicePixelRatio = window.devicePixelRatio || 1;
-        const dprMultiplier = Math.min(devicePixelRatio, 2.5);
+        // Cap at 2.5 to balance extreme clarity vs memory usage
+        const dprMultiplier = Math.min(devicePixelRatio, 2.5); 
         
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         const isTablet = /iPad|Android/i.test(navigator.userAgent) && window.innerWidth >= 768;
         
-        // Calculate optimal scale for all devices
         let baseScale;
         if (isMobile) {
             baseScale = (window.innerWidth - 20) / 612;
@@ -74,34 +80,21 @@
         }
         baseScale = Math.max(baseScale, 0.5);
         
-        // Function to create optimized canvas
         function createOptimizedCanvas(viewport) {
             const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d', { alpha: false }); // Performance boost
             
-            // --- CLARITY IMPROVEMENT 2: OPTIMIZE CONTEXT ---
-            // alpha: false tells browser the background is opaque, enabling sub-pixel AA in some browsers
-            const context = canvas.getContext('2d', { alpha: false });
-            
-            // Set dimensions based on High DPI
             canvas.width = Math.floor(viewport.width * dprMultiplier);
             canvas.height = Math.floor(viewport.height * dprMultiplier);
             
-            // CSS dimensions match the viewport (logical pixels)
             canvas.style.width = Math.floor(viewport.width) + 'px';
             canvas.style.height = 'auto';
             canvas.style.maxWidth = '100%';
             
-            // Scale the context to match the high-res backing store
             context.scale(dprMultiplier, dprMultiplier);
-            
-            // --- CLARITY IMPROVEMENT 3: ENABLE SMOOTHING ---
-            // Removed 'imageSmoothingEnabled = false'. 
-            // Default smoothing is better for text vectors.
-            
             return { canvas, context };
         }
         
-        // Progressive rendering queue
         const renderQueue = [];
         let isRendering = false;
         
@@ -121,19 +114,23 @@
                 const viewport = page.getViewport({ scale: baseScale });
                 const { canvas, context } = createOptimizedCanvas(viewport);
                 
-                if (placeholder && placeholder.parentNode) {
-                    placeholder.parentNode.replaceChild(canvas, placeholder);
-                } else {
-                    container.appendChild(canvas);
-                }
-                
+                // Render Page
                 const renderContext = {
                     canvasContext: context,
                     viewport: viewport
                 };
                 
                 page.render(renderContext).promise.then(function() {
-                    requestAnimationFrame(renderNext);
+                    // Swap placeholder for canvas
+                    if (placeholder && placeholder.parentNode) {
+                        placeholder.parentNode.replaceChild(canvas, placeholder);
+                    }
+                    
+                    // PERFORMANCE TWEAK: Small delay before next page to keep UI responsive
+                    setTimeout(() => {
+                        requestAnimationFrame(renderNext);
+                    }, 50); 
+                    
                 }).catch(function(error) {
                     console.error('Error rendering page:', error);
                     requestAnimationFrame(renderNext);
@@ -143,7 +140,9 @@
             requestAnimationFrame(renderNext);
         }
         
+        // Initial Load
         pdfjsLib.getDocument(pdfPath).promise.then(function(pdf) {
+            // 1. Setup Placeholders
             for (let i = 1; i <= pdf.numPages; i++) {
                 const placeholder = document.createElement('div');
                 placeholder.className = 'page-placeholder';
@@ -152,13 +151,11 @@
                 container.appendChild(placeholder);
             }
             
-            // Render first page immediately
+            // 2. Render Page 1 (Priority)
             pdf.getPage(1).then(function(page) {
                 const placeholder = container.children[0];
                 const viewport = page.getViewport({ scale: baseScale });
                 const { canvas, context } = createOptimizedCanvas(viewport);
-                
-                placeholder.parentNode.replaceChild(canvas, placeholder);
                 
                 const renderContext = {
                     canvasContext: context,
@@ -166,6 +163,9 @@
                 };
                 
                 page.render(renderContext).promise.then(function() {
+                    placeholder.parentNode.replaceChild(canvas, placeholder);
+                    
+                    // 3. Queue the rest
                     for (let pageNum = 2; pageNum <= pdf.numPages; pageNum++) {
                         pdf.getPage(pageNum).then(function(page) {
                             const placeholder = container.children[pageNum - 1];
@@ -174,11 +174,9 @@
                         });
                     }
                 });
-            }).catch(function(error) {
-                container.innerHTML = '<div style="color:white;padding:50px;text-align:center;">Error loading first page: ' + error.message + '</div>';
             });
         }).catch(function(error) {
-            container.innerHTML = '<div style="color:white;padding:50px;text-align:center;">Error loading PDF: ' + error.message + '</div>';
+            container.innerHTML = '<div style="color:white;padding:50px;text-align:center;">Error loading PDF.</div>';
         });
     </script>
 </body>

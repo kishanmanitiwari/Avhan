@@ -24,56 +24,19 @@
             height: auto;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
-        .skeleton-loader {
-            padding: 20px;
-        }
-        .skeleton-page {
-            width: 90%;
-            max-width: 800px;
-            margin: 0 auto 20px;
-            background: white;
-            border-radius: 4px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            overflow: hidden;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        .skeleton-page::before {
-            content: '';
-            display: block;
-            padding-top: 141.42%; /* A4 ratio */
-            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-            background-size: 200% 100%;
-            animation: shimmer 1.5s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.8; }
-        }
-        @keyframes shimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-        }
         .loading {
             display: none;
         }
     </style>
 </head>
 <body>
-    <div id="pdf-container">
-        <div class="skeleton-loader" id="skeleton">
-            <div class="skeleton-page"></div>
-            <div class="skeleton-page"></div>
-            <div class="skeleton-page"></div>
-        </div>
-        <div class="loading">Loading PDF...</div>
-    </div>
+    <div id="pdf-container"></div>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         
         const container = document.getElementById('pdf-container');
-        const skeleton = document.getElementById('skeleton');
         const pdfPath = 'SWAPNIL BHAU AHVAL FINAL 05I11I25_compressed (1).pdf';
         
         // Detect device type for optimal scaling
@@ -92,42 +55,56 @@
         scale = Math.max(scale, 0.5);
         
         pdfjsLib.getDocument(pdfPath).promise.then(function(pdf) {
-            skeleton.style.display = 'none';
-            container.innerHTML = '';
-            
-            const renderPage = function(pageNum) {
-                pdf.getPage(pageNum).then(function(page) {
-                    const viewport = page.getViewport({ scale: scale });
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
-                    canvas.style.maxWidth = '100%';
-                    canvas.style.height = 'auto';
-                    
-                    container.appendChild(canvas);
-                    
-                    const renderContext = {
-                        canvasContext: context,
-                        viewport: viewport
-                    };
-                    
-                    page.render(renderContext).promise.then(function() {
-                        if (pageNum < pdf.numPages) {
-                            renderPage(pageNum + 1);
+            // Render first page immediately
+            pdf.getPage(1).then(function(page) {
+                const viewport = page.getViewport({ scale: scale });
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                canvas.style.maxWidth = '100%';
+                canvas.style.height = 'auto';
+                
+                container.appendChild(canvas);
+                
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                
+                // Show first page as soon as it renders
+                page.render(renderContext).promise.then(function() {
+                    // Now render remaining pages in background
+                    if (pdf.numPages > 1) {
+                        for (let pageNum = 2; pageNum <= pdf.numPages; pageNum++) {
+                            pdf.getPage(pageNum).then(function(page) {
+                                const viewport = page.getViewport({ scale: scale });
+                                const canvas = document.createElement('canvas');
+                                const context = canvas.getContext('2d');
+                                canvas.height = viewport.height;
+                                canvas.width = viewport.width;
+                                canvas.style.maxWidth = '100%';
+                                canvas.style.height = 'auto';
+                                
+                                container.appendChild(canvas);
+                                
+                                const renderContext = {
+                                    canvasContext: context,
+                                    viewport: viewport
+                                };
+                                
+                                page.render(renderContext);
+                            }).catch(function(error) {
+                                console.error('Error loading page:', error);
+                            });
                         }
-                    }).catch(function(error) {
-                        console.error('Error rendering page:', error);
-                    });
-                }).catch(function(error) {
-                    console.error('Error loading page:', error);
+                    }
                 });
-            };
-            
-            renderPage(1);
+            }).catch(function(error) {
+                container.innerHTML = '<div style="color:white;padding:50px;text-align:center;">Error loading first page: ' + error.message + '</div>';
+            });
         }).catch(function(error) {
-            skeleton.style.display = 'none';
-            container.innerHTML = '<div class="loading" style="display:block;color:white;padding:50px;text-align:center;">Error loading PDF: ' + error.message + '</div>';
+            container.innerHTML = '<div style="color:white;padding:50px;text-align:center;">Error loading PDF: ' + error.message + '</div>';
         });
     </script>
 </body>

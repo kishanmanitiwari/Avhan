@@ -20,7 +20,6 @@
         canvas {
             margin: 0 auto 10px;
             display: block;
-            max-width: 100%;
             height: auto;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
@@ -39,20 +38,9 @@
         const container = document.getElementById('pdf-container');
         const pdfPath = 'SWAPNIL BHAU AHVAL FINAL 05I11I25_compressed (1).pdf';
         
-        // Detect device type for optimal scaling
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        const isTablet = /iPad|Android/i.test(navigator.userAgent) && window.innerWidth >= 768;
-        
-        // Calculate optimal scale for all devices
-        let scale;
-        if (isMobile) {
-            scale = (window.innerWidth - 20) / 612;
-        } else if (isTablet) {
-            scale = (window.innerWidth - 40) / 612;
-        } else {
-            scale = 1.5;
-        }
-        scale = Math.max(scale, 0.5);
+        // Use desktop scale for all devices for better text quality
+        // This allows horizontal scrolling on mobile but provides crisp, readable text
+        const scale = 2.0; // High quality scale for all devices
         
         pdfjsLib.getDocument(pdfPath).promise.then(function(pdf) {
             // Render first page immediately
@@ -62,7 +50,6 @@
                 const context = canvas.getContext('2d');
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
-                canvas.style.maxWidth = '100%';
                 canvas.style.height = 'auto';
                 
                 container.appendChild(canvas);

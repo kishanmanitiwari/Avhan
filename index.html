@@ -14,7 +14,7 @@
             width: 100%;
             height: 100vh;
             overflow: auto;
-            -webkit-overflow-scrolling: touch; /* Momentum scrolling on iOS */
+            -webkit-overflow-scrolling: touch;
             text-align: center;
             padding: 10px 0;
             background: #2c3e50;
@@ -27,19 +27,20 @@
             height: auto;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
             
-            /* PERFORMANCE OPTIMIZATIONS */
+            /* SPEED & SMOOTHNESS OPTIMIZATIONS */
             opacity: 0;
-            /* Tells browser to prepare GPU for opacity changes - prevents stutter */
-            will-change: opacity; 
-            /* Slower, smoother ease-out animation */
-            animation: fadeIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; 
+            /* Force GPU layer creation for silky smooth performance */
+            will-change: opacity, transform;
+            transform: translateZ(0); 
+            animation: fadeIn 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; 
             
-            /* CLARITY OPTIMIZATIONS */
+            /* CLARITY WITHOUT PERFORMANCE COST */
+            /* Slight contrast bump mimics "ink on paper" */
             filter: contrast(105%);
         }
         
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); } /* Added slight slide-up for premium feel */
+            from { opacity: 0; transform: translateY(15px); } 
             to { opacity: 1; transform: translateY(0); }
         }
         
@@ -62,10 +63,12 @@
         const container = document.getElementById('pdf-container');
         const pdfPath = 'SWAPNIL BHAU AHVAL FINAL 05I11I25_compressed (1).pdf';
         
-        // High quality scale settings
+        // --- BALANCED PERFORMANCE SETTINGS ---
+        
+        // 1. Cap at 2.0. This is the "Retina" sweet spot. 
+        // Going to 3.0 (Ultra) creates 2x more lag for barely visible gain.
         const devicePixelRatio = window.devicePixelRatio || 1;
-        // Cap at 2.5 to balance extreme clarity vs memory usage
-        const dprMultiplier = Math.min(devicePixelRatio, 2.5); 
+        const dprMultiplier = Math.min(devicePixelRatio, 2.0); 
         
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         const isTablet = /iPad|Android/i.test(navigator.userAgent) && window.innerWidth >= 768;
@@ -78,11 +81,12 @@
         } else {
             baseScale = 1.5;
         }
-        baseScale = Math.max(baseScale, 0.5);
+        baseScale = Math.max(baseScale, 0.6);
         
         function createOptimizedCanvas(viewport) {
             const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d', { alpha: false }); // Performance boost
+            // alpha: false boosts FPS by ignoring transparency calculations
+            const context = canvas.getContext('2d', { alpha: false });
             
             canvas.width = Math.floor(viewport.width * dprMultiplier);
             canvas.height = Math.floor(viewport.height * dprMultiplier);
@@ -92,6 +96,11 @@
             canvas.style.maxWidth = '100%';
             
             context.scale(dprMultiplier, dprMultiplier);
+            
+            // Standard smoothing is faster and looks great at 2.0x
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = 'medium'; 
+            
             return { canvas, context };
         }
         
@@ -114,35 +123,26 @@
                 const viewport = page.getViewport({ scale: baseScale });
                 const { canvas, context } = createOptimizedCanvas(viewport);
                 
-                // Render Page
                 const renderContext = {
                     canvasContext: context,
                     viewport: viewport
                 };
                 
                 page.render(renderContext).promise.then(function() {
-                    // Swap placeholder for canvas
                     if (placeholder && placeholder.parentNode) {
                         placeholder.parentNode.replaceChild(canvas, placeholder);
                     }
-                    
-                    // PERFORMANCE TWEAK: Small delay before next page to keep UI responsive
-                    setTimeout(() => {
-                        requestAnimationFrame(renderNext);
-                    }, 50); 
-                    
+                    // 30ms delay allows the browser to "breathe" and handle scrolling events
+                    setTimeout(() => { requestAnimationFrame(renderNext); }, 30);
                 }).catch(function(error) {
                     console.error('Error rendering page:', error);
                     requestAnimationFrame(renderNext);
                 });
             }
-            
             requestAnimationFrame(renderNext);
         }
         
-        // Initial Load
         pdfjsLib.getDocument(pdfPath).promise.then(function(pdf) {
-            // 1. Setup Placeholders
             for (let i = 1; i <= pdf.numPages; i++) {
                 const placeholder = document.createElement('div');
                 placeholder.className = 'page-placeholder';
@@ -151,7 +151,6 @@
                 container.appendChild(placeholder);
             }
             
-            // 2. Render Page 1 (Priority)
             pdf.getPage(1).then(function(page) {
                 const placeholder = container.children[0];
                 const viewport = page.getViewport({ scale: baseScale });
@@ -164,8 +163,6 @@
                 
                 page.render(renderContext).promise.then(function() {
                     placeholder.parentNode.replaceChild(canvas, placeholder);
-                    
-                    // 3. Queue the rest
                     for (let pageNum = 2; pageNum <= pdf.numPages; pageNum++) {
                         pdf.getPage(pageNum).then(function(page) {
                             const placeholder = container.children[pageNum - 1];

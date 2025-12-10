@@ -25,6 +25,18 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             image-rendering: -webkit-optimize-contrast;
             image-rendering: crisp-edges;
+            opacity: 0;
+            animation: fadeIn 0.3s ease-in forwards;
+        }
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+        .page-placeholder {
+            margin: 0 auto 10px;
+            background: #3a3a3a;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            min-height: 200px;
         }
         .loading {
             display: none;
@@ -43,7 +55,7 @@
         
         // Use moderate DPR for text clarity without heavy performance cost
         const devicePixelRatio = window.devicePixelRatio || 1;
-        const dprMultiplier = Math.min(devicePixelRatio, 1.5); // Cap at 1.5x for speed
+        const dprMultiplier = Math.min(devicePixelRatio, 1.5);
         
         // Detect device type for optimal scaling
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -60,63 +72,101 @@
         }
         baseScale = Math.max(baseScale, 0.5);
         
-        // Function to create optimized canvas (better text, acceptable images)
+        // Function to create optimized canvas
         function createOptimizedCanvas(viewport) {
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
             
-            // Moderate DPR for text clarity without heavy performance cost
             canvas.width = viewport.width * dprMultiplier;
             canvas.height = viewport.height * dprMultiplier;
             
-            // Set display size
             canvas.style.width = viewport.width + 'px';
             canvas.style.height = 'auto';
             canvas.style.maxWidth = '100%';
             
-            // Scale context
             context.scale(dprMultiplier, dprMultiplier);
-            
-            // Optimize for text clarity (disable smoothing for sharper text)
-            context.imageSmoothingEnabled = false; // Crisper text edges
+            context.imageSmoothingEnabled = false;
             
             return { canvas, context };
         }
         
-        pdfjsLib.getDocument(pdfPath).promise.then(function(pdf) {
-            // Render first page immediately
-            pdf.getPage(1).then(function(page) {
+        // Progressive rendering queue
+        const renderQueue = [];
+        let isRendering = false;
+        
+        function processRenderQueue() {
+            if (isRendering || renderQueue.length === 0) return;
+            isRendering = true;
+            
+            function renderNext() {
+                if (renderQueue.length === 0) {
+                    isRendering = false;
+                    return;
+                }
+                
+                const item = renderQueue.shift();
+                const { page, pageNum, placeholder } = item;
+                
                 const viewport = page.getViewport({ scale: baseScale });
                 const { canvas, context } = createOptimizedCanvas(viewport);
                 
-                container.appendChild(canvas);
+                // Replace placeholder with canvas
+                if (placeholder && placeholder.parentNode) {
+                    placeholder.parentNode.replaceChild(canvas, placeholder);
+                } else {
+                    container.appendChild(canvas);
+                }
                 
                 const renderContext = {
                     canvasContext: context,
                     viewport: viewport
                 };
                 
-                // Show first page as soon as it renders
                 page.render(renderContext).promise.then(function() {
-                    // Now render remaining pages in background
-                    if (pdf.numPages > 1) {
-                        for (let pageNum = 2; pageNum <= pdf.numPages; pageNum++) {
-                            pdf.getPage(pageNum).then(function(page) {
-                                const viewport = page.getViewport({ scale: baseScale });
-                                const { canvas, context } = createOptimizedCanvas(viewport);
-                                
-                                container.appendChild(canvas);
-                                
-                                const renderContext = {
-                                    canvasContext: context,
-                                    viewport: viewport
-                                };
-                                
-                                page.render(renderContext);
-                            }).catch(function(error) {
-                                console.error('Error loading page:', error);
-                            });
-                        }
+                    // Process next item in queue
+                    requestAnimationFrame(renderNext);
+                }).catch(function(error) {
+                    console.error('Error rendering page:', error);
+                    requestAnimationFrame(renderNext);
+                });
+            }
+            
+            requestAnimationFrame(renderNext);
+        }
+        
+        pdfjsLib.getDocument(pdfPath).promise.then(function(pdf) {
+            // Create placeholders for all pages first
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'page-placeholder';
+                placeholder.style.width = (baseScale * 612) + 'px';
+                placeholder.style.maxWidth = '100%';
+                container.appendChild(placeholder);
+            }
+            
+            // Render first page immediately (highest priority)
+            pdf.getPage(1).then(function(page) {
+                const placeholder = container.children[0];
+                const viewport = page.getViewport({ scale: baseScale });
+                const { canvas, context } = createOptimizedCanvas(viewport);
+                
+                placeholder.parentNode.replaceChild(canvas, placeholder);
+                
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                
+                page.render(renderContext).promise.then(function() {
+                    // Queue remaining pages for progressive rendering
+                    for (let pageNum = 2; pageNum <= pdf.numPages; pageNum++) {
+                        pdf.getPage(pageNum).then(function(page) {
+                            const placeholder = container.children[pageNum - 1];
+                            renderQueue.push({ page, pageNum, placeholder });
+                            processRenderQueue();
+                        }).catch(function(error) {
+                            console.error('Error loading page:', error);
+                        });
                     }
                 });
             }).catch(function(error) {

@@ -16,17 +16,19 @@
             -webkit-overflow-scrolling: touch;
             text-align: center;
             padding: 10px 0;
+            background: #2c3e50;
         }
         canvas {
             margin: 0 auto 10px;
             display: block;
-            max-width: 100%;
+            /* Ensure canvas doesn't overflow horizontally */
+            max-width: 100%; 
             height: auto;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: crisp-edges;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
             opacity: 0;
             animation: fadeIn 0.3s ease-in forwards;
+            /* Slight contrast boost for perceived sharpness */
+            filter: contrast(105%); 
         }
         @keyframes fadeIn {
             to { opacity: 1; }
@@ -53,11 +55,11 @@
         const container = document.getElementById('pdf-container');
         const pdfPath = 'SWAPNIL BHAU AHVAL FINAL 05I11I25_compressed (1).pdf';
         
-        // Use moderate DPR for text clarity without heavy performance cost
+        // --- CLARITY IMPROVEMENT 1: ALLOW HIGHER PIXEL DENSITY ---
+        // Was capped at 1.5, increasing to 2.5 covers most Retina/High-DPI screens
         const devicePixelRatio = window.devicePixelRatio || 1;
-        const dprMultiplier = Math.min(devicePixelRatio, 1.5);
+        const dprMultiplier = Math.min(devicePixelRatio, 2.5);
         
-        // Detect device type for optimal scaling
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         const isTablet = /iPad|Android/i.test(navigator.userAgent) && window.innerWidth >= 768;
         
@@ -75,17 +77,26 @@
         // Function to create optimized canvas
         function createOptimizedCanvas(viewport) {
             const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
             
-            canvas.width = viewport.width * dprMultiplier;
-            canvas.height = viewport.height * dprMultiplier;
+            // --- CLARITY IMPROVEMENT 2: OPTIMIZE CONTEXT ---
+            // alpha: false tells browser the background is opaque, enabling sub-pixel AA in some browsers
+            const context = canvas.getContext('2d', { alpha: false });
             
-            canvas.style.width = viewport.width + 'px';
+            // Set dimensions based on High DPI
+            canvas.width = Math.floor(viewport.width * dprMultiplier);
+            canvas.height = Math.floor(viewport.height * dprMultiplier);
+            
+            // CSS dimensions match the viewport (logical pixels)
+            canvas.style.width = Math.floor(viewport.width) + 'px';
             canvas.style.height = 'auto';
             canvas.style.maxWidth = '100%';
             
+            // Scale the context to match the high-res backing store
             context.scale(dprMultiplier, dprMultiplier);
-            context.imageSmoothingEnabled = false;
+            
+            // --- CLARITY IMPROVEMENT 3: ENABLE SMOOTHING ---
+            // Removed 'imageSmoothingEnabled = false'. 
+            // Default smoothing is better for text vectors.
             
             return { canvas, context };
         }
@@ -110,7 +121,6 @@
                 const viewport = page.getViewport({ scale: baseScale });
                 const { canvas, context } = createOptimizedCanvas(viewport);
                 
-                // Replace placeholder with canvas
                 if (placeholder && placeholder.parentNode) {
                     placeholder.parentNode.replaceChild(canvas, placeholder);
                 } else {
@@ -123,7 +133,6 @@
                 };
                 
                 page.render(renderContext).promise.then(function() {
-                    // Process next item in queue
                     requestAnimationFrame(renderNext);
                 }).catch(function(error) {
                     console.error('Error rendering page:', error);
@@ -135,7 +144,6 @@
         }
         
         pdfjsLib.getDocument(pdfPath).promise.then(function(pdf) {
-            // Create placeholders for all pages first
             for (let i = 1; i <= pdf.numPages; i++) {
                 const placeholder = document.createElement('div');
                 placeholder.className = 'page-placeholder';
@@ -144,7 +152,7 @@
                 container.appendChild(placeholder);
             }
             
-            // Render first page immediately (highest priority)
+            // Render first page immediately
             pdf.getPage(1).then(function(page) {
                 const placeholder = container.children[0];
                 const viewport = page.getViewport({ scale: baseScale });
@@ -158,14 +166,11 @@
                 };
                 
                 page.render(renderContext).promise.then(function() {
-                    // Queue remaining pages for progressive rendering
                     for (let pageNum = 2; pageNum <= pdf.numPages; pageNum++) {
                         pdf.getPage(pageNum).then(function(page) {
                             const placeholder = container.children[pageNum - 1];
                             renderQueue.push({ page, pageNum, placeholder });
                             processRenderQueue();
-                        }).catch(function(error) {
-                            console.error('Error loading page:', error);
                         });
                     }
                 });

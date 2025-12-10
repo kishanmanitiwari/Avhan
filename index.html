@@ -23,8 +23,6 @@
             max-width: 100%;
             height: auto;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: crisp-edges;
         }
         .loading {
             display: none;
@@ -41,82 +39,31 @@
         const container = document.getElementById('pdf-container');
         const pdfPath = 'SWAPNIL BHAU AHVAL FINAL 05I11I25_compressed (1).pdf';
         
-        // Get device pixel ratio for high-DPI displays (retina, etc.)
-        const devicePixelRatio = window.devicePixelRatio || 1;
-        const baseScale = 2.0;
-        const scale = baseScale * devicePixelRatio; // Higher quality on retina displays
+        // Detect device type for optimal scaling
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const isTablet = /iPad|Android/i.test(navigator.userAgent) && window.innerWidth >= 768;
         
-        // Render queue for batch processing
-        let renderQueue = [];
-        let isRendering = false;
-        
-        function processRenderQueue() {
-            if (isRendering || renderQueue.length === 0) return;
-            isRendering = true;
-            
-            requestAnimationFrame(function renderBatch() {
-                const batch = renderQueue.splice(0, 2); // Process 2 pages per frame
-                
-                batch.forEach(function(item) {
-                    const { page, pageNum } = item;
-                    
-                    const viewport = page.getViewport({ scale: baseScale });
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    
-                    // Set actual size considering device pixel ratio
-                    canvas.width = viewport.width * devicePixelRatio;
-                    canvas.height = viewport.height * devicePixelRatio;
-                    canvas.style.width = viewport.width + 'px';
-                    canvas.style.height = viewport.height + 'px';
-                    canvas.style.maxWidth = '100%';
-                    
-                    // Scale context for high-DPI
-                    context.scale(devicePixelRatio, devicePixelRatio);
-                    
-                    // Optimize canvas rendering
-                    context.imageSmoothingEnabled = true;
-                    context.imageSmoothingQuality = 'high';
-                    
-                    container.appendChild(canvas);
-                    
-                    const renderContext = {
-                        canvasContext: context,
-                        viewport: viewport
-                    };
-                    
-                    page.render(renderContext);
-                });
-                
-                if (renderQueue.length > 0) {
-                    requestAnimationFrame(renderBatch);
-                } else {
-                    isRendering = false;
-                }
-            });
+        // Calculate optimal scale for all devices
+        let scale;
+        if (isMobile) {
+            scale = (window.innerWidth - 20) / 612;
+        } else if (isTablet) {
+            scale = (window.innerWidth - 40) / 612;
+        } else {
+            scale = 1.5;
         }
+        scale = Math.max(scale, 0.5);
         
-        pdfjsLib.getDocument({
-            url: pdfPath,
-            cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-            cMapPacked: true,
-            enableXfa: true
-        }).promise.then(function(pdf) {
-            // Render first page immediately with high priority
+        pdfjsLib.getDocument(pdfPath).promise.then(function(pdf) {
+            // Render first page immediately
             pdf.getPage(1).then(function(page) {
-                const viewport = page.getViewport({ scale: baseScale });
+                const viewport = page.getViewport({ scale: scale });
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
-                
-                canvas.width = viewport.width * devicePixelRatio;
-                canvas.height = viewport.height * devicePixelRatio;
-                canvas.style.width = viewport.width + 'px';
-                canvas.style.height = viewport.height + 'px';
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
                 canvas.style.maxWidth = '100%';
-                
-                context.scale(devicePixelRatio, devicePixelRatio);
-                context.imageSmoothingEnabled = true;
-                context.imageSmoothingQuality = 'high';
+                canvas.style.height = 'auto';
                 
                 container.appendChild(canvas);
                 
@@ -125,14 +72,28 @@
                     viewport: viewport
                 };
                 
-                // First page renders immediately
+                // Show first page as soon as it renders
                 page.render(renderContext).promise.then(function() {
-                    // Queue remaining pages for batch rendering
+                    // Now render remaining pages in background
                     if (pdf.numPages > 1) {
                         for (let pageNum = 2; pageNum <= pdf.numPages; pageNum++) {
                             pdf.getPage(pageNum).then(function(page) {
-                                renderQueue.push({ page, pageNum });
-                                processRenderQueue();
+                                const viewport = page.getViewport({ scale: scale });
+                                const canvas = document.createElement('canvas');
+                                const context = canvas.getContext('2d');
+                                canvas.height = viewport.height;
+                                canvas.width = viewport.width;
+                                canvas.style.maxWidth = '100%';
+                                canvas.style.height = 'auto';
+                                
+                                container.appendChild(canvas);
+                                
+                                const renderContext = {
+                                    canvasContext: context,
+                                    viewport: viewport
+                                };
+                                
+                                page.render(renderContext);
                             }).catch(function(error) {
                                 console.error('Error loading page:', error);
                             });
